@@ -1,0 +1,102 @@
+name: Claude window warmup
+
+# Sends one tiny message to Claude every hour so that a fresh 5-hour usage
+# window opens within an hour of the old one closing, no matter when you
+# actually started working that day.
+#
+# THE ANCHOR
+#
+# A 5-hour window opens on your first message and nothing resets it early, so
+# the phase of the whole day is set by whoever sends the first message after a
+# gap. Pings run 6am-8pm Eastern and stop overnight. That leaves a 10-hour gap
+# with no window open, so the 6:17am ping is always the one that anchors the
+# day. Windows then land at roughly:
+#
+#     6am - 11am  |  11am - 4pm  |  4pm - 9pm
+#
+# Two boundaries inside the workday means a long session gets access to two
+# windows' worth of quota rather than one.
+#
+# Do not extend the schedule past 8pm Eastern. A ping at 9:17pm would open an
+# unwanted evening window and push the next morning's anchor off 6am.
+#
+# TIMEZONE: cron is always UTC. The hours below (10-23,0) are 6am-8pm Eastern
+# Daylight Time (UTC-4). When EDT ends on 2 Nov 2026, Eastern becomes UTC-5 and
+# this schedule slides to 5am-7pm local. To hold the 6am anchor through winter,
+# change the hours to '11-23,0-1'.
+#
+# Minute 17 is deliberate. GitHub's free scheduler is busiest at the top of
+# the hour and jobs queued for :00 are often delayed. An odd minute runs closer
+# to on time.
+#
+# GitHub's scheduler is best-effort and occasionally drops a run. A dropped
+# ping costs one hour of window time and shifts the phase, but the fixed 6am
+# re-anchor means the damage never lasts past the end of that day.
+
+on:
+  schedule:
+    - cron: '17 10-23,0 * * *'
+  workflow_dispatch: {}
+
+# cancel-in-progress is false on purpose. A cancelled ping is a ping that never
+# reached Claude, which defeats the point. Let any in-flight run finish.
+concurrency:
+  group: claude-warmup
+  cancel-in-progress: false
+
+jobs:
+  warmup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check the token secret exists
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          if [ -z "${CLAUDE_CODE_OAUTH_TOKEN}" ]; then
+            echo "The CLAUDE_CODE_OAUTH_TOKEN secret is not set on this repository."
+            echo "Add it under Settings > Secrets and variables > Actions > New repository secret."
+            exit 1
+          fi
+          echo "Token secret found."
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Ping Claude to open a 5-hour window
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          # Skip the first-run onboarding prompts, which would otherwise hang.
+          mkdir -p ~/.claude
+          echo '{"hasCompletedOnboarding":true}' > ~/.claude.json
+
+          out="$(mktemp)"
+          set +e
+          claude -p "Reply with the single word: ok" \
+                 --model haiku \
+                 --no-session-persistence >"$out" 2>&1
+          status=$?
+          set -e
+          cat "$out"
+
+          if [ $status -eq 0 ]; then
+            echo "Warmup succeeded. A 5-hour window is open (or was already open)."
+            exit 0
+          fi
+
+          # A rate-limit reply still proves the request reached Claude, which is
+          # all the warmup needs. Treat it as success.
+          if grep -qi "rate limit" "$out"; then
+            echo "Rate limited, but the request landed. Window is anchored."
+            exit 0
+          fi
+
+          if grep -Eqi "expired|unauthorized|invalid token|authentication|auth failed|login required|not logged in" "$out"; then
+            echo "The saved token looks expired or invalid."
+            echo "Run 'claude setup-token' on your PC and update the CLAUDE_CODE_OAUTH_TOKEN secret."
+            exit 1
+          fi
+
+          echo "Warmup failed for an unexpected reason. See the output above."
+          exit $status
