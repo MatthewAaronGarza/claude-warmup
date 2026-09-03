@@ -29,14 +29,27 @@ name: Claude window warmup
 # the hour and jobs queued for :00 are often delayed. An odd minute runs closer
 # to on time.
 #
-# GitHub's scheduler is best-effort and occasionally drops a run. A dropped
-# ping costs one hour of window time and shifts the phase, but the fixed 6am
-# re-anchor means the damage never lasts past the end of that day.
+# GitHub's scheduler is best-effort. In practice it drops most runs once a
+# repo has gone a few weeks without commits (observed from 26 Aug 2026: 2-5 of
+# 15 daily runs fired, and the 6:17am anchor never did). The `schedule` trigger
+# below is therefore only a backup. The primary trigger is an external cron
+# service (cron-job.org) that calls GitHub's API to fire `workflow_dispatch`
+# on time. Dispatch events bypass the scheduler queue and start within seconds.
+# See README.md, "Reliable triggering".
+#
+# Badly delayed scheduled runs have also landed overnight (1:24am, 5:49am
+# Eastern), which opens a window before 6am and defeats the anchor. The first
+# step below refuses to ping outside 6am-8pm Eastern unless `force` is set.
 
 on:
   schedule:
     - cron: '17 10-23,0 * * *'
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Ping even if outside 6am-8pm Eastern'
+        type: boolean
+        default: false
 
 # cancel-in-progress is false on purpose. A cancelled ping is a ping that never
 # reached Claude, which defeats the point. Let any in-flight run finish.
@@ -49,7 +62,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Refuse to ping outside 6am-8pm Eastern
+        env:
+          FORCE: ${{ inputs.force }}
+        run: |
+          hour=$(TZ=America/New_York date +%-H)
+          now=$(TZ=America/New_York date '+%a %-I:%M %p %Z')
+          echo "Triggered by: ${GITHUB_EVENT_NAME}. Eastern time now: ${now}."
+          if [ "${FORCE}" = "true" ]; then
+            echo "force=true, pinging regardless of the hour."
+          elif [ "$hour" -lt 6 ] || [ "$hour" -gt 20 ]; then
+            echo "Outside the 6am-8pm Eastern window. Skipping the ping so the"
+            echo "6am anchor is not disturbed by a late or stray run."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+        id: gate
+
       - name: Check the token secret exists
+        if: steps.gate.outputs.skip != 'true'
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
@@ -61,9 +91,11 @@ jobs:
           echo "Token secret found."
 
       - name: Install Claude Code
+        if: steps.gate.outputs.skip != 'true'
         run: npm install -g @anthropic-ai/claude-code
 
       - name: Ping Claude to open a 5-hour window
+        if: steps.gate.outputs.skip != 'true'
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
