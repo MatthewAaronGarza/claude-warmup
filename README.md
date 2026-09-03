@@ -119,3 +119,25 @@ Three things now cover it, in order of importance:
 - **The 5-hour window is not the only limit.** There is also a weekly rolling cap, which is why
   pinging more aggressively than hourly is a bad trade: extra pings inside an already-open window
   achieve nothing and still count against the weekly ceiling.
+
+## Change history
+
+What is in place, when it was added, and why. Newest at the bottom.
+
+- **2026-08-01. Initial version.** Hourly `schedule:` cron at :17, 6am-8pm Eastern, one Haiku
+  request per run. Minute 17 to avoid the top-of-hour rush, no pings overnight so the 6:17am run
+  anchors the day, `cancel-in-progress: false` so a ping is never killed mid-flight, and a
+  rate-limit reply treated as success because the request still landed.
+- **2026-09-02. Time gate.** From 26 August the scheduler fired only 2 to 5 of 15 daily runs,
+  and a few badly delayed runs landed at 1am and 5am Eastern, opening a window before 6am. The
+  workflow's first step now refuses to ping outside 6am-8pm Eastern. A manual run can set the
+  `force` input to override it.
+- **2026-09-02. External trigger.** The 6:17am run had not fired for a week and the drop-off
+  began about 25 days after the last commit, which matches GitHub deprioritising scheduled runs
+  in quiet repos. cron-job.org now calls the `workflow_dispatch` API at :17, 6am-8pm
+  America/New_York. Dispatch events skip the scheduler queue: in testing, the run started in the
+  same second the API call was made. `scripts/setup-dispatcher.sh` walks through creating the
+  token and the job. The `schedule:` trigger stays as a backup.
+- **2026-09-02. Cloud routine.** A Claude Code cloud routine sends the 6:17am ping from
+  Anthropic's infrastructure as a second path that does not touch GitHub at all. It is configured
+  per account rather than in this repo, so it is documented here but not versioned here.
