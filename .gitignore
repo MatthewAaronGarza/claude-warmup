@@ -1,3 +1,6 @@
 # Local notes only. Kept off GitHub because this repo is public and the guide
 # mentions plan tier, timezone, and unrelated project names.
 SETUP.md
+
+# Local secrets written by scripts/setup-dispatcher.sh
+.env

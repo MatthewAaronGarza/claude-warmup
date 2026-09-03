@@ -65,15 +65,44 @@ The full reasoning lives in the comment block at the top of
 
 Scheduled workflows only run from the default branch, so leave this on `main`.
 
+## Reliable triggering
+
+GitHub's own scheduler turned out to be the weak link. From 26 August 2026 it fired only 2 to 5
+of the 15 daily runs, never the 6:17am one, and a few badly delayed runs landed at 1am and 5am,
+which opened a window before 6am and defeated the anchor. The drop-off began about 25 days
+after the last commit, and GitHub deprioritises scheduled runs in quiet repos long before the
+documented 60-day disable.
+
+Three things now cover it, in order of importance:
+
+1. **An external cron service fires the workflow.** cron-job.org calls GitHub's API at :17,
+   6am-8pm Eastern, which triggers `workflow_dispatch`. Dispatch events skip the scheduler queue
+   and start within seconds. cron-job.org runs to the minute and emails you if a call fails.
+   Set it up by running the wizard, which walks you through the token and the job:
+   ```
+   bash scripts/setup-dispatcher.sh
+   ```
+   The `schedule:` trigger stays in the workflow as a free backup. If both fire in the same hour,
+   the second ping is a harmless no-op.
+2. **A time gate in the workflow.** The first step refuses to ping outside 6am-8pm Eastern, so a
+   stray overnight run can no longer break the anchor. Tick `force` on a manual run to override.
+3. **A Claude Code cloud routine at 6:17am** as a second, GitHub-free path for the anchor ping
+   only. It runs a one-line Haiku session on Anthropic's infrastructure. Manage it at
+   https://claude.ai/code/routines. Its cron is UTC too: `17 10 * * *` in summer, `17 11 * * *`
+   after 2 November 2026.
+
 ## Maintenance you will actually need
 
 - **Daylight Saving.** Cron has no timezone. When Eastern shifts to UTC-5 (2 Nov 2026), change the
   hours from `10-23,0` to `11-23,0-1` to hold the 6am anchor.
 - **Token expiry.** The OAuth token is good for about a year. When it dies, runs start failing and
   GitHub emails you. Re-run `claude setup-token` and update the secret.
-- **60-day dormancy.** GitHub disables scheduled workflows in repos with no commit activity for
-  60 days. It warns you by email first and re-enabling is one button, but a commit every month or
-  two avoids it entirely.
+- **60-day dormancy.** GitHub disables the `schedule:` trigger in repos with no commit activity
+  for 60 days. `workflow_dispatch` from cron-job.org is unaffected, so this only costs you the
+  backup path. A commit every month or two avoids it entirely.
+- **Dispatcher token expiry.** The fine-grained GitHub token used by cron-job.org expires on the
+  date you chose when creating it. GitHub emails you beforehand. Re-run
+  `bash scripts/setup-dispatcher.sh` to make a new one and update the job's header.
 - **Unpinned install.** Each run does `npm install -g @anthropic-ai/claude-code`, so it always
   pulls the latest release. If the pings ever start failing for no obvious reason, an upstream
   release is the first thing to check.
@@ -83,9 +112,10 @@ Scheduled workflows only run from the default branch, so leave this on `main`.
 - **The pings do not show up in your history.** `--no-session-persistence` is set, and Claude Code
   transcripts are local files rather than cloud records. Nothing appears in Claude Desktop or on
   claude.ai. The only trace is the Actions run log.
-- **GitHub's scheduler drops runs sometimes.** It is best-effort, not a guarantee. A dropped ping
-  costs an hour of window time and shifts the phase, but the fixed 6am re-anchor means the damage
-  never survives past the end of that day.
+- **GitHub's scheduler drops runs, sometimes most of them.** It is best-effort, not a guarantee,
+  and it gets worse the longer a repo goes without commits. That is why the primary trigger is
+  external (see "Reliable triggering"). A dropped ping costs an hour of window time; a dropped
+  6:17am ping costs the whole day's phase.
 - **The 5-hour window is not the only limit.** There is also a weekly rolling cap, which is why
   pinging more aggressively than hourly is a bad trade: extra pings inside an already-open window
   achieve nothing and still count against the weekly ceiling.
