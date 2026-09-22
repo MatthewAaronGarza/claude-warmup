@@ -39,7 +39,7 @@ A few details that are deliberate rather than accidental:
   next morning's anchor off 6am.
 - **`cancel-in-progress: false`.** A cancelled ping is a ping that never reached Claude, which
   defeats the whole point.
-- **A rate-limit reply counts as success.** If Claude answers "rate limited", the request still
+- **A rate-limit reply counts as success.** If Claude answers "rate limited" or "hit your session limit", the request still
   landed, and landing is all the warmup needs.
 
 The full reasoning lives in the comment block at the top of

@@ -119,7 +119,7 @@ jobs:
 
           # A rate-limit reply still proves the request reached Claude, which is
           # all the warmup needs. Treat it as success.
-          if grep -qi "rate limit" "$out"; then
+          if grep -Eqi "rate limit|session limit|usage limit|hit your .* limit" "$out"; then
             echo "Rate limited, but the request landed. Window is anchored."
             exit 0
           fi
