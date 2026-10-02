@@ -58,8 +58,8 @@ The full reasoning lives in the comment block at the top of
    ```
    gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo <you>/claude-warmup
    ```
-4. Edit the `cron` line in `warmup.yml` for your timezone. Cron is always UTC. The committed value
-   `17 10-23,0 * * *` is 6:17am-8:17pm US Eastern Daylight Time (UTC-4).
+4. Edit the `cron` and `timezone` fields in `warmup.yml` for your local schedule. The committed
+   `17 6-20 * * *` with `America/New_York` is 6:17am-8:17pm Eastern all year, including daylight-saving changes.
 5. Run it once by hand from the Actions tab (`Run workflow`) to confirm it works. A good run takes
    about 10 seconds and ends with `Warmup succeeded.`
 
@@ -88,13 +88,15 @@ Three things now cover it, in order of importance:
    stray overnight run can no longer break the anchor. Tick `force` on a manual run to override.
 3. **A Claude Code cloud routine at 6:17am** as a second, GitHub-free path for the anchor ping
    only. It runs a one-line Haiku session on Anthropic's infrastructure. Manage it at
-   https://claude.ai/code/routines. Its cron is UTC too: `17 10 * * *` in summer, `17 11 * * *`
-   after 2 November 2026.
+   https://claude.ai/code/routines. Its recorded cron is UTC: `17 10 * * *` in summer, `17 11 * * *`
+   after the clock change on 1 November 2026. Check the saved routine before editing it; a local-time
+   6:17am schedule needs no UTC-hour swap.
 
 ## Maintenance you will actually need
 
-- **Daylight Saving.** Cron has no timezone. When Eastern shifts to UTC-5 (2 Nov 2026), change the
-  hours from `10-23,0` to `11-23,0-1` to hold the 6am anchor.
+- **Daylight Saving.** The GitHub backup uses `America/New_York` and needs no seasonal edit.
+  If the cloud routine still uses its recorded UTC cron, change `17 10 * * *` to `17 11 * * *`
+  for its first 6:17am Eastern run on 1 November 2026. Do not shift it a week early.
 - **Token expiry.** The OAuth token is good for about a year. When it dies, runs start failing and
   GitHub emails you. Re-run `claude setup-token` and update the secret.
 - **60-day dormancy.** GitHub disables the `schedule:` trigger in repos with no commit activity
