@@ -58,8 +58,10 @@ The full reasoning lives in the comment block at the top of
    ```
    gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo <you>/claude-warmup
    ```
-4. Edit the `cron` line in `warmup.yml` for your timezone. Cron is always UTC. The committed value
-   `17 10-23,0 * * *` is 6:17am-8:17pm US Eastern Daylight Time (UTC-4).
+4. Edit the `cron` line and the `TZ=America/New_York` time gate in `warmup.yml` for your timezone.
+   Cron is always UTC. The committed value `17 10-23,0-1 * * *` covers 6:17am-8:17pm US Eastern
+   in both summer (UTC-4) and winter (UTC-5); the time gate skips the one hour a day that falls
+   outside, so Daylight Saving needs no edit.
 5. Run it once by hand from the Actions tab (`Run workflow`) to confirm it works. A good run takes
    about 10 seconds and ends with `Warmup succeeded.`
 
@@ -88,13 +90,13 @@ Three things now cover it, in order of importance:
    stray overnight run can no longer break the anchor. Tick `force` on a manual run to override.
 3. **A Claude Code cloud routine at 6:17am** as a second, GitHub-free path for the anchor ping
    only. It runs a one-line Haiku session on Anthropic's infrastructure. Manage it at
-   https://claude.ai/code/routines. Its cron is UTC too: `17 10 * * *` in summer, `17 11 * * *`
-   after 2 November 2026.
+   https://claude.ai/code/routines. Its cron is UTC and it has no time gate, so it stays at
+   `17 11 * * *` all year: 6:17am in winter, and 7:17am in summer, when cron-job.org has already
+   opened the 6am window and the routine's ping changes nothing. Never set it to `17 10`: in
+   winter that fires at 5:17am and anchors the whole day an hour early.
 
 ## Maintenance you will actually need
 
-- **Daylight Saving.** Cron has no timezone. When Eastern shifts to UTC-5 (2 Nov 2026), change the
-  hours from `10-23,0` to `11-23,0-1` to hold the 6am anchor.
 - **Token expiry.** The OAuth token is good for about a year. When it dies, runs start failing and
   GitHub emails you. Re-run `claude setup-token` and update the secret.
 - **60-day dormancy.** GitHub disables the `schedule:` trigger in repos with no commit activity
@@ -141,3 +143,8 @@ What is in place, when it was added, and why. Newest at the bottom.
 - **2026-09-02. Cloud routine.** A Claude Code cloud routine sends the 6:17am ping from
   Anthropic's infrastructure as a second path that does not touch GitHub at all. It is configured
   per account rather than in this repo, so it is documented here but not versioned here.
+- **2026-11-06. No more Daylight Saving edits.** The routine was still at `17 10 * * *` UTC after
+  Eastern moved to UTC-5 on 1 November, so from then on it fired at 5:17am and opened the day's
+  first window at 5:10 rather than 6:10. The routine is now `17 11 * * *` all year, and the
+  workflow's backup cron is `17 10-23,0-1 * * *`, which covers 6am-8pm Eastern under both
+  offsets and relies on the time gate to skip the extra hour.

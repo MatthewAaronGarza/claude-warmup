@@ -20,10 +20,10 @@ name: Claude window warmup
 # Do not extend the schedule past 8pm Eastern. A ping at 9:17pm would open an
 # unwanted evening window and push the next morning's anchor off 6am.
 #
-# TIMEZONE: cron is always UTC. The hours below (10-23,0) are 6am-8pm Eastern
-# Daylight Time (UTC-4). When EDT ends on 2 Nov 2026, Eastern becomes UTC-5 and
-# this schedule slides to 5am-7pm local. To hold the 6am anchor through winter,
-# change the hours to '11-23,0-1'.
+# TIMEZONE: cron is always UTC, and Eastern is UTC-4 in summer and UTC-5 in
+# winter. The hours below (10-23,0-1) cover 6am-8pm Eastern under both, so
+# Daylight Saving needs no edit. The one extra run a day (5:17am in winter,
+# 9:17pm in summer) falls outside 6am-8pm, and the first step skips it.
 #
 # Minute 17 is deliberate. GitHub's free scheduler is busiest at the top of
 # the hour and jobs queued for :00 are often delayed. An odd minute runs closer
@@ -43,7 +43,7 @@ name: Claude window warmup
 
 on:
   schedule:
-    - cron: '17 10-23,0 * * *'
+    - cron: '17 10-23,0-1 * * *'
   workflow_dispatch:
     inputs:
       force:
